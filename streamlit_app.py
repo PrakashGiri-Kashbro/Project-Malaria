@@ -14,7 +14,9 @@ PROCESSED_DIR = Path("data/processed")
 PROCESSED_FILE_PATH = PROCESSED_DIR / "processed_malaria_data.csv"
 MODEL_DIR = Path("models")
 MODEL_FILE_PATH = MODEL_DIR / "malaria_incidence_forecast_model.pkl"
-TARGET_INDICATOR = 'MALARIA_EST_INCIDENCE' # We will forecast the estimated incidence
+
+# FIX: Define the simplified, correct target column name after cleaning
+TARGET_INDICATOR = 'malaria_incidence' # We will force rename the actual incidence column to this
 
 # --- Re-using Data Loading/Preprocessing Functions from data_loader.py for robustness ---
 
@@ -25,7 +27,9 @@ def load_and_preprocess_if_missing(file_path):
     """
     if PROCESSED_FILE_PATH.exists():
         print(f"Loading existing processed data from: {PROCESSED_FILE_PATH}")
-        return pd.read_csv(PROCESSED_FILE_PATH)
+        df_pivot = pd.read_csv(PROCESSED_FILE_PATH)
+        print(f"Available Indicators: {df_pivot.columns.tolist()}")
+        return df_pivot
 
     print(f"Processed file not found. Running full preprocessing pipeline...")
     
@@ -37,6 +41,7 @@ def load_and_preprocess_if_missing(file_path):
         return None
     
     # Initial Cleaning and Validation (Simplified)
+    # Step 1: Standardize column names from header=1
     df.columns = df.columns.str.lower().str.replace(r'[^\w\s]', '', regex=True).str.strip().str.replace(r'\s+', '_', regex=True)
     df = df.rename(columns={'gho_display': 'indicator_name', 'year_display': 'year', 'numeric': 'value_num'})
     
@@ -59,15 +64,27 @@ def load_and_preprocess_if_missing(file_path):
     upper_bound = Q3 + 1.5 * IQR
     df['malaria_cases_or_rate'] = np.clip(df['malaria_cases_or_rate'], lower_bound, upper_bound)
     
-    # Pivoting
+    # Pivoting: indicator_name becomes columns. These names are long and messy.
     df_pivot = df.pivot_table(index='year', columns='indicator_name', values='malaria_cases_or_rate', aggfunc='first').reset_index()
     df_pivot = df_pivot.fillna(method='ffill').fillna(method='bfill')
+    
+    # Step 3: Clean up PIVOTED column names (lowercase and underscore conversion)
+    df_pivot.columns = df_pivot.columns.str.lower().str.replace(r'[^a-z0-9_]', '', regex=True).str.strip().str.replace(r'\s+', '_', regex=True)
+    
+    # Step 4: Find the incidence column and RENAME it to the simple TARGET_INDICATOR
+    incidence_cols = [col for col in df_pivot.columns if 'incidence' in col]
+    if incidence_cols:
+        # Assuming the first match is the correct one for simplicity
+        df_pivot = df_pivot.rename(columns={incidence_cols[0]: TARGET_INDICATOR})
     
     # Scaling
     features_to_scale = df_pivot.columns.drop('year').tolist()
     scaler = StandardScaler()
     df_pivot[features_to_scale] = scaler.fit_transform(df_pivot[features_to_scale])
-    df_pivot = df_pivot.rename(columns=lambda x: x.replace(' ', '_')) 
+    
+    # --- NEW CHECK: Print Available Columns ---
+    print(f"Pivoted and Scaled DataFrame shape: {df_pivot.shape}")
+    print(f"Available Indicators: {df_pivot.columns.tolist()}")
 
     # Save and return
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -79,19 +96,19 @@ def load_and_preprocess_if_missing(file_path):
 
 # --- Step 4: Feature Engineering ---
 
-def create_lagged_features(df, target_col, lags=2): # Reduced lag to 2 for better stability on small datasets
+def create_lagged_features(df, target_col, lags=2):
     """
     Creates lagged (time-shifted) features for time-series forecasting.
     """
     print(f"\n--- Step 4: Feature Engineering (Creating Lags up to {lags} Years) ---")
     
-    df = df.set_index('year').copy()
-    
-    # Ensure the target exists before dropping NaNs
+    # Verify target column existence
     if target_col not in df.columns:
-        print(f"Error: Target column '{target_col}' not found in the processed data.")
-        return pd.DataFrame() # Return empty DataFrame
+        # This should now only happen if the renaming logic failed, or data is missing
+        print(f"CRITICAL ERROR: Target column '{target_col}' not found in the processed data columns.")
+        return pd.DataFrame() 
 
+    df = df.set_index('year').copy()
     df.dropna(subset=[target_col], inplace=True) 
 
     # Create lagged features for ALL indicators
@@ -111,14 +128,14 @@ def create_lagged_features(df, target_col, lags=2): # Reduced lag to 2 for bette
     
     return df_features
 
-# --- Step 5: Machine Learning Modeling ---
+# --- Step 5: Machine Learning Modeling (No changes needed here) ---
 
 def train_and_evaluate_model(df, target_col='forecast_target'):
     """Trains a Linear Regression model for forecasting."""
     print("\n--- Step 5: Machine Learning Modeling (Linear Regression) ---")
     
     if df.shape[0] < 5:
-        print("Error: Not enough data points to reliably train and test (need at least 5 rows).")
+        print(f"Error: Not enough data points to reliably train and test. Found {df.shape[0]} rows (need at least 5).")
         return None
 
     # Define X (features) and y (target)
@@ -127,6 +144,10 @@ def train_and_evaluate_model(df, target_col='forecast_target'):
     
     # Split data (shuffle=False for time series)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    
+    # Check split size
+    print(f"Training set size: {X_train.shape[0]}")
+    print(f"Testing set size: {X_test.shape[0]}")
 
     # Train the model
     model = LinearRegression()
@@ -151,7 +172,7 @@ def train_and_evaluate_model(df, target_col='forecast_target'):
 
     return model
 
-# --- Main Execution ---
+# --- Main Execution (No changes needed here) ---
 
 if __name__ == "__main__":
     try:
@@ -166,9 +187,9 @@ if __name__ == "__main__":
             if not lagged_df.empty:
                 train_and_evaluate_model(lagged_df)
             else:
-                print("Error: Lagged dataframe is empty. Cannot proceed to training.")
+                print("ML pipeline aborted: Lagged dataframe is empty.")
         else:
-            print("ML pipeline aborted due to data loading/generation failure.")
+            print("ML pipeline aborted due to data loading/generation failure or empty dataset.")
 
     except Exception as e:
         print(f"An unexpected error occurred during ML pipeline execution: {e}")
