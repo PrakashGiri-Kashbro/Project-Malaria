@@ -1,0 +1,9 @@
+Project-Malaria/
+│
+├── data/
+│    └── malaria_indicators_btn.csv   ← MUST be here
+│
+├── pipeline.py
+├── streamlit_app.py
+├── requirements.txt
+└── README.md
