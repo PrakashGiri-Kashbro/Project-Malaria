@@ -3,10 +3,17 @@ import pandas as pd
 import pydeck as pdk
 import json
 
-# Load district-level malaria data (2015–2023) that you manually collected from Google
-district_df = pd.read_csv("data/bhutan_district_malaria_2015_2023.csv")
+# Load district-level data from the correct file
+district_df = pd.read_csv("data/malaria_indicators_btn.csv")
 
-# Select year
+# Rename columns if needed
+district_df = district_df.rename(columns={
+    "DISTRICT": "district",
+    "YEAR": "year",
+    "CASES": "cases"
+})
+
+# Sidebar year selector
 year_list = sorted(district_df["year"].unique())
 selected_year = st.sidebar.selectbox("Select Year", year_list)
 
@@ -16,30 +23,22 @@ year_df = district_df[district_df["year"] == selected_year]
 with open("data/bhutan_districts.json","r") as f:
     geojson = json.load(f)
 
-# Merge district values into GeoJSON
+# Merge the values into GeoJSON
 for feature in geojson["features"]:
     district_name = feature["properties"]["DTN"]
     match = year_df[year_df["district"] == district_name]
     if not match.empty:
-        value = float(match["cases"].values[0])
-        feature["properties"]["value"] = value
+        feature["properties"]["value"] = float(match["cases"].values[0])
     else:
         feature["properties"]["value"] = 0
 
-# Pydeck layer with color based on cases
+# Pydeck Layer
 layer = pdk.Layer(
     "GeoJsonLayer",
     geojson,
     filled=True,
     stroked=True,
-    get_fill_color="""
-    [
-        255 * (properties.value /  max(1, properties.value)),
-        50,
-        50,
-        150
-    ]
-    """,
+    get_fill_color="[255 * (properties.value > 0), 0, 0, 150]"
 )
 
 view_state = pdk.ViewState(
