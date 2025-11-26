@@ -59,3 +59,33 @@ st.plotly_chart(fig_line, use_container_width=True)
 # Show data table
 st.write("### Data Table")
 st.dataframe(filtered_df)
+
+st.header("Bhutan District Map")
+
+import pydeck as pdk
+import json
+import pandas as pd
+
+geojson = json.load(open("data/bhutan_districts.geojson"))
+
+layer = pdk.Layer(
+    "GeoJsonLayer",
+    geojson,
+    stroked=True,
+    filled=True,
+    get_fill_color="[255, 0, 0, 100]",
+)
+
+view_state = pdk.ViewState(
+    latitude=27.5,
+    longitude=90.4,
+    zoom=7
+)
+
+st.pydeck_chart(
+    pdk.Deck(
+        layers=[layer],
+        initial_view_state=view_state
+    )
+)
+
