@@ -1,103 +1,60 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-
-# Load the data
-@st.cache_data
-def load_data():
-    df = pd.read_csv("data/malaria_indicators_btn.csv")
-    return df
-
-df = load_data()
-
-st.title("Bhutan Malaria Indicators Dashboard")
-st.write("""
-This is a simple dashboard I made for learning purposes. 
-Below are the main things included in this Streamlit app:
-
-- Load processed healthcare data
-- Show different trend charts over the years
-- A small model prediction widget (coming soon)
-- A dashboard for key malaria indicators
-- District-wise map for Bhutan (basic version for now)
-
-I will keep improving this as I learn more.
-""")
-st.write("This simple dashboard shows malaria-related indicators over the years.")
-
-# Rename columns for easier use
-df = df.rename(columns={
-    "GHO (DISPLAY)": "indicator_name",
-    "YEAR (DISPLAY)": "year",
-    "Numeric": "value_num"
-})
-
-# convert numeric column properly
-df["value_num"] = pd.to_numeric(df["value_num"], errors="coerce")
-
-# Sidebar – only select indicator
-indicator_list = df["indicator_name"].dropna().unique()
-
-selected_indicator = st.sidebar.selectbox(
-    "Select an Indicator",
-    indicator_list
-)
-
-# Filter data
-filtered_df = df[df["indicator_name"] == selected_indicator]
-
-st.subheader(f"Indicator: {selected_indicator}")
-
-# Bar chart
-st.write("### Bar Chart")
-fig_bar = px.bar(
-    filtered_df,
-    x="year",
-    y="value_num",
-    title=f"{selected_indicator} Over Years"
-)
-st.plotly_chart(fig_bar, use_container_width=True)
-
-# Line chart
-st.write("### Line Chart")
-fig_line = px.line(
-    filtered_df,
-    x="year",
-    y="value_num",
-    markers=True
-)
-st.plotly_chart(fig_line, use_container_width=True)
-
-# Show data table
-st.write("### Data Table")
-st.dataframe(filtered_df)
-
-st.header("Bhutan District Map")
-
 import pydeck as pdk
 import json
 
-# load the Bhutan districts file
-geojson = json.load(open("data/bhutan_districts.json"))
+# Load district-level malaria data (2015–2023) that you manually collected from Google
+district_df = pd.read_csv("data/bhutan_district_malaria_2015_2023.csv")
 
+# Select year
+year_list = sorted(district_df["year"].unique())
+selected_year = st.sidebar.selectbox("Select Year", year_list)
+
+year_df = district_df[district_df["year"] == selected_year]
+
+# Load GeoJSON
+with open("data/bhutan_districts.json","r") as f:
+    geojson = json.load(f)
+
+# Merge district values into GeoJSON
+for feature in geojson["features"]:
+    district_name = feature["properties"]["DTN"]
+    match = year_df[year_df["district"] == district_name]
+    if not match.empty:
+        value = float(match["cases"].values[0])
+        feature["properties"]["value"] = value
+    else:
+        feature["properties"]["value"] = 0
+
+# Pydeck layer with color based on cases
 layer = pdk.Layer(
     "GeoJsonLayer",
     geojson,
-    stroked=True,
     filled=True,
-    get_fill_color="[255, 0, 0, 100]"
+    stroked=True,
+    get_fill_color="""
+    [
+        255 * (properties.value /  max(1, properties.value)),
+        50,
+        50,
+        150
+    ]
+    """,
 )
 
 view_state = pdk.ViewState(
-    latitude=27.5,
     longitude=90.4,
+    latitude=27.5,
     zoom=7
 )
+
+st.header("Bhutan District Map (Malaria Cases)")
+st.write(f"Showing malaria case distribution for the year: {selected_year}")
 
 st.pydeck_chart(
     pdk.Deck(
         layers=[layer],
-        initial_view_state=view_state
+        initial_view_state=view_state,
+        tooltip={"html": "<b>{DTN}</b><br/>Cases: {value}"}
     )
 )
-
