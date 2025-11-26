@@ -11,6 +11,18 @@ def load_data():
 df = load_data()
 
 st.title("Bhutan Malaria Indicators Dashboard")
+st.write("""
+Bhutan has made significant progress toward eliminating malaria, achieving zero indigenous (locally acquired) cases nationwide since 2021. The remaining risk is restricted to imported cases from neighboring India, primarily in the southern districts.This is a simple dashboard I made for learning purposes. 
+Below are the main things included in this Streamlit app:
+
+- Load processed healthcare data
+- Show different trend charts over the years
+- A small model prediction widget (coming soon)
+- A dashboard for key malaria indicators
+- District-wise map for Bhutan (basic version for now)
+
+I will keep improving this as I learn more.
+""")
 st.write("This simple dashboard shows malaria-related indicators over the years.")
 
 # Rename columns for easier use
