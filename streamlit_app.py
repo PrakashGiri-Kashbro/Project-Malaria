@@ -66,7 +66,7 @@ import pydeck as pdk
 import json
 import pandas as pd
 
-geojson = json.load(open("data/bhutan_districts.geojson"))
+geojson = json.load(open("data/bhutan_districts.json"))
 
 layer = pdk.Layer(
     "GeoJsonLayer",
