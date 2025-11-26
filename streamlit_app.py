@@ -1,57 +1,72 @@
-# streamlit_app.py
-
 import streamlit as st
 import pandas as pd
-from pipeline import load_and_preprocess, make_lagged_features, train_and_save_model, load_model, predict_next_year
+import plotly.express as px
 
-st.set_page_config(page_title="Malaria Incidence Forecasting", layout="centered")
+# -------------------------------------------
+# Load Data
+# -------------------------------------------
+@st.cache_data
+def load_data():
+    df = pd.read_csv("data/malaria_indicators_btn.csv")
+    return df
 
-st.title("🦟 Malaria Incidence Forecasting (Bhutan)")
+df = load_data()
 
-# --- Load / Preprocess Data ---
-if st.button("Load & Preprocess Data"):
-    try:
-        df = load_and_preprocess()
-        st.success("Data processed successfully!")
-        st.dataframe(df.head())
-    except Exception as e:
-        st.error(f"Error during data loading / preprocessing: {e}")
+st.title("📊 Bhutan Malaria Indicators Dashboard")
 
-# --- Train Model ---
-if st.button("Train Model"):
-    try:
-        df = load_and_preprocess()
-        df_model = make_lagged_features(df, lags=2)
-        results = train_and_save_model(df_model)
+st.write("Visualizing malaria indicators from WHO dataset.")
 
-        st.success("Model trained and saved successfully!")
-        st.write("**Model Performance on Test Set:**")
-        st.write(f"MSE: {results['mse']:.4f}")
-        st.write(f"RMSE: {results['rmse']:.4f}")
-        st.write(f"R²: {results['r2']:.4f}")
-    except Exception as e:
-        st.error(f"Error during model training: {e}")
+# -------------------------------------------
+# Clean and prepare columns
+# -------------------------------------------
 
-# --- Predict Next Year ---
-if st.button("Predict Next Year’s Incidence"):
-    try:
-        # Preprocess & generate lag features
-        df = load_and_preprocess()
-        df_model = make_lagged_features(df, lags=2)
+# Rename important columns to simple names
+df = df.rename(columns={
+    "GHO (DISPLAY)": "indicator_name",
+    "YEAR (DISPLAY)": "year",
+    "Numeric": "value_num"
+})
 
-        # Load the trained model
-        model = load_model()
+# Ensure value_num is numeric
+df["value_num"] = pd.to_numeric(df["value_num"], errors="coerce")
 
-        # Make prediction
-        pred = predict_next_year(model, df_model)
-        st.success(f"🧮 Predicted Malaria Incidence for Next Year: **{pred:.4f}**")
-    except Exception as e:
-        st.error(f"Error during prediction: {e}")
+# -------------------------------------------
+# Sidebar selection
+# -------------------------------------------
+indicator_list = df["indicator_name"].dropna().unique()
+year_list = sorted(df["year"].dropna().unique())
 
-# --- Show Processed Data Table ---
-if st.checkbox("Show Full Processed Data"):
-    try:
-        df = load_and_preprocess()
-        st.dataframe(df)
-    except Exception as e:
-        st.error(f"Cannot load processed data: {e}")
+selected_indicator = st.sidebar.selectbox("Select Indicator", indicator_list)
+selected_year = st.sidebar.selectbox("Select Year", year_list)
+
+# -------------------------------------------
+# Filter Data
+# -------------------------------------------
+filtered_df = df[
+    (df["indicator_name"] == selected_indicator) &
+    (df["year"] == selected_year)
+]
+
+st.subheader(f"{selected_indicator} — {selected_year}")
+st.dataframe(filtered_df)
+
+# -------------------------------------------
+# Plot trend graph
+# -------------------------------------------
+plot_df = df[df["indicator_name"] == selected_indicator]
+
+fig = px.line(
+    plot_df,
+    x="year",
+    y="value_num",
+    title=f"Trend Over Time: {selected_indicator}",
+    markers=True
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# -------------------------------------------
+# Summary statistics
+# -------------------------------------------
+st.subheader("📌 Summary Statistics")
+st.write(plot_df["value_num"].describe())
