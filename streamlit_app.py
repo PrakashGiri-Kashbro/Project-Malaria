@@ -12,61 +12,47 @@ def load_data():
 
 df = load_data()
 
-st.title("📊 Bhutan Malaria Indicators Dashboard")
-
-st.write("Visualizing malaria indicators from WHO dataset.")
+st.title("🦟 Bhutan Malaria Indicators Dashboard")
+st.markdown("Explore malaria indicators over the years using WHO dataset.")
 
 # -------------------------------------------
-# Clean and prepare columns
+# Clean Column Names
 # -------------------------------------------
-
-# Rename important columns to simple names
 df = df.rename(columns={
     "GHO (DISPLAY)": "indicator_name",
     "YEAR (DISPLAY)": "year",
     "Numeric": "value_num"
 })
 
-# Ensure value_num is numeric
+# Convert numeric column
 df["value_num"] = pd.to_numeric(df["value_num"], errors="coerce")
 
 # -------------------------------------------
-# Sidebar selection
+# Sidebar: Indicator Selection ONLY
 # -------------------------------------------
-indicator_list = df["indicator_name"].dropna().unique()
-year_list = sorted(df["year"].dropna().unique())
+indicator_list = sorted(df["indicator_name"].dropna().unique())
 
-selected_indicator = st.sidebar.selectbox("Select Indicator", indicator_list)
-selected_year = st.sidebar.selectbox("Select Year", year_list)
-
-# -------------------------------------------
-# Filter Data
-# -------------------------------------------
-filtered_df = df[
-    (df["indicator_name"] == selected_indicator) &
-    (df["year"] == selected_year)
-]
-
-st.subheader(f"{selected_indicator} — {selected_year}")
-st.dataframe(filtered_df)
-
-# -------------------------------------------
-# Plot trend graph
-# -------------------------------------------
-plot_df = df[df["indicator_name"] == selected_indicator]
-
-fig = px.line(
-    plot_df,
-    x="year",
-    y="value_num",
-    title=f"Trend Over Time: {selected_indicator}",
-    markers=True
+selected_indicator = st.sidebar.selectbox(
+    "Select Indicator",
+    indicator_list
 )
 
-st.plotly_chart(fig, use_container_width=True)
+# -------------------------------------------
+# Filter Data for Selected Indicator
+# -------------------------------------------
+filtered_df = df[df["indicator_name"] == selected_indicator]
+
+st.subheader(f"📌 {selected_indicator}")
 
 # -------------------------------------------
-# Summary statistics
+# Beautiful Bar Graph
 # -------------------------------------------
-st.subheader("📌 Summary Statistics")
-st.write(plot_df["value_num"].describe())
+fig = px.bar(
+    filtered_df,
+    x="year",
+    y="value_num",
+    text="value_num",
+    title=f"{selected_indicator} (Across Years)",
+)
+
+fi
