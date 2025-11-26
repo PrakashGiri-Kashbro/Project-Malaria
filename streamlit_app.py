@@ -76,16 +76,16 @@ st.header("Bhutan District Map")
 
 import pydeck as pdk
 import json
-import pandas as pd
 
-geojson = json.load(open("data/bhutan_districts.geojson"))
+# load the Bhutan districts file
+geojson = json.load(open("data/bhutan_districts.json"))
 
 layer = pdk.Layer(
     "GeoJsonLayer",
     geojson,
     stroked=True,
     filled=True,
-    get_fill_color="[255, 0, 0, 100]",
+    get_fill_color="[255, 0, 0, 100]"
 )
 
 view_state = pdk.ViewState(
