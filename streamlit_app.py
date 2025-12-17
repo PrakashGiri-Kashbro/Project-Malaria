@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np
-from sklearn.linear_model import LinearRegression
 import pydeck as pdk
 import json
 
@@ -17,8 +16,11 @@ st.set_page_config(
 st.title("🇧🇹 Bhutan Malaria Indicators Dashboard")
 
 st.markdown("""
-Bhutan has made significant progress toward eliminating malaria, achieving **zero indigenous cases since 2021**.
-This dashboard visualizes historical trends and provides **simple future projections** based on past data.
+Bhutan has made remarkable progress toward malaria elimination,  
+achieving **zero indigenous cases since 2021**.
+
+This dashboard visualizes historical indicators and provides  
+**simple future projections based on past trends**.
 """)
 
 # --------------------------------------------------
@@ -26,8 +28,7 @@ This dashboard visualizes historical trends and provides **simple future project
 # --------------------------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/malaria_indicators_btn.csv")
-    return df
+    return pd.read_csv("data/malaria_indicators_btn.csv")
 
 df = load_data()
 
@@ -56,27 +57,24 @@ selected_indicator = st.sidebar.selectbox(
 filtered_df = df[df["indicator"] == selected_indicator].sort_values("year")
 
 selected_year = st.sidebar.slider(
-    "Select Year (for map)",
+    "Select Year (Map Highlight)",
     int(filtered_df["year"].min()),
     int(filtered_df["year"].max()),
     int(filtered_df["year"].max())
 )
 
 forecast_years = st.sidebar.slider(
-    "Forecast Years Into Future",
+    "Years to Forecast",
     1, 10, 5
 )
 
 # --------------------------------------------------
 # KPI
 # --------------------------------------------------
-st.subheader(f"📊 Indicator: {selected_indicator}")
-latest_value = filtered_df.iloc[-1]["value"]
-latest_year = int(filtered_df.iloc[-1]["year"])
-
+latest_row = filtered_df.iloc[-1]
 st.metric(
-    label=f"Latest Value ({latest_year})",
-    value=f"{latest_value:,.2f}"
+    label=f"Latest Value ({int(latest_row['year'])})",
+    value=f"{latest_row['value']:.2f}"
 )
 
 # --------------------------------------------------
@@ -85,98 +83,91 @@ st.metric(
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### Line Chart")
+    st.subheader("Line Trend")
     fig_line = px.line(
         filtered_df,
         x="year",
         y="value",
         markers=True
     )
-    st.plotly_chart(fig_line, use_container_width=True)
+    st.plotly_chart(fig_line, width="stretch")
 
 with col2:
-    st.markdown("### Bar Chart")
+    st.subheader("Bar Chart")
     fig_bar = px.bar(
         filtered_df,
         x="year",
         y="value"
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width="stretch")
 
 # --------------------------------------------------
 # HISTOGRAM
 # --------------------------------------------------
-st.markdown("### Histogram of Values")
+st.subheader("Histogram")
 fig_hist = px.histogram(
     filtered_df,
     x="value",
     nbins=10
 )
-st.plotly_chart(fig_hist, use_container_width=True)
+st.plotly_chart(fig_hist, width="stretch")
 
 # --------------------------------------------------
-# PREDICTION MODEL
+# FUTURE PREDICTION (NUMPY)
 # --------------------------------------------------
-st.markdown("### 🔮 Future Prediction (Linear Trend)")
+st.subheader("🔮 Future Projection")
 
-X = filtered_df[["year"]]
-y = filtered_df["value"]
+# Linear trend using numpy (cloud-safe)
+x = filtered_df["year"].values
+y = filtered_df["value"].values
 
-model = LinearRegression()
-model.fit(X, y)
+coef = np.polyfit(x, y, 1)
+trend = np.poly1d(coef)
 
 future_years = np.arange(
-    int(filtered_df["year"].max()) + 1,
-    int(filtered_df["year"].max()) + forecast_years + 1
+    int(x.max()) + 1,
+    int(x.max()) + forecast_years + 1
 )
 
-future_df = pd.DataFrame({"year": future_years})
-future_df["predicted_value"] = model.predict(future_df[["year"]])
+future_values = trend(future_years)
 
-forecast_plot_df = pd.concat([
-    filtered_df[["year", "value"]].rename(columns={"value": "cases"}),
-    future_df.rename(columns={"predicted_value": "cases"})
-])
-
-forecast_plot_df["type"] = (
-    ["Actual"] * len(filtered_df) +
-    ["Predicted"] * len(future_df)
-)
+forecast_df = pd.DataFrame({
+    "year": np.concatenate([x, future_years]),
+    "value": np.concatenate([y, future_values]),
+    "type": ["Observed"] * len(x) + ["Predicted"] * len(future_years)
+})
 
 fig_forecast = px.line(
-    forecast_plot_df,
+    forecast_df,
     x="year",
-    y="cases",
+    y="value",
     color="type",
     markers=True
 )
-st.plotly_chart(fig_forecast, use_container_width=True)
+st.plotly_chart(fig_forecast, width="stretch")
 
 # --------------------------------------------------
 # DATA TABLE
 # --------------------------------------------------
-st.markdown("### Data Table")
+st.subheader("Data Table")
 st.dataframe(filtered_df)
 
 # --------------------------------------------------
 # MAP (YEAR-WISE HIGHLIGHT)
 # --------------------------------------------------
-st.header("🗺️ Bhutan District Map (Year-wise Indicator)")
+st.subheader("🗺️ Bhutan District Map")
 
 geojson = json.load(open("data/bhutan_districts.json"))
 
-# NOTE:
-# If district-level malaria data becomes available,
-# replace this simulated scaling logic
 year_value = filtered_df[filtered_df["year"] == selected_year]["value"].mean()
-fill_intensity = min(255, int(year_value * 10)) if not np.isnan(year_value) else 50
+intensity = 50 if np.isnan(year_value) else min(255, int(year_value * 10))
 
 layer = pdk.Layer(
     "GeoJsonLayer",
     geojson,
-    stroked=True,
     filled=True,
-    get_fill_color=f"[255, {255 - fill_intensity}, {255 - fill_intensity}, 140]",
+    stroked=True,
+    get_fill_color=f"[255, {255-intensity}, {255-intensity}, 140]",
     get_line_color=[0, 0, 0],
     pickable=True,
 )
@@ -195,5 +186,5 @@ st.pydeck_chart(
     )
 )
 
-st.caption("⚠️ District coloring is illustrative. Replace with real district-level data when available.")
+st.caption("District coloring is illustrative. Replace with district-level malaria data when available.")
 
