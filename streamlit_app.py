@@ -1,8 +1,29 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
+from sklearn.linear_model import LinearRegression
+import pydeck as pdk
+import json
 
-# Load the data
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+st.set_page_config(
+    page_title="Bhutan Malaria Dashboard",
+    layout="wide"
+)
+
+st.title("🇧🇹 Bhutan Malaria Indicators Dashboard")
+
+st.markdown("""
+Bhutan has made significant progress toward eliminating malaria, achieving **zero indigenous cases since 2021**.
+This dashboard visualizes historical trends and provides **simple future projections** based on past data.
+""")
+
+# --------------------------------------------------
+# LOAD DATA
+# --------------------------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("data/malaria_indicators_btn.csv")
@@ -10,82 +31,154 @@ def load_data():
 
 df = load_data()
 
-st.title("Bhutan Malaria Indicators Dashboard")
-st.write("""
-Bhutan has made significant progress toward eliminating malaria, achieving zero indigenous (locally acquired) cases nationwide since 2021. The remaining risk is restricted to imported cases from neighboring India, primarily in the southern districts.This is a simple dashboard I made for learning purposes. 
-Below are the main things included in this Streamlit app:
-
-- Load processed healthcare data
-- Show different trend charts over the years
-- A small model prediction widget (coming soon)
-- A dashboard for key malaria indicators
-- District-wise map for Bhutan (basic version for now)
-
-I will keep improving this as I learn more.
-""")
-st.write("This simple dashboard shows malaria-related indicators over the years.")
-
-# Rename columns for easier use
+# Rename columns
 df = df.rename(columns={
-    "GHO (DISPLAY)": "indicator_name",
+    "GHO (DISPLAY)": "indicator",
     "YEAR (DISPLAY)": "year",
-    "Numeric": "value_num"
+    "Numeric": "value"
 })
 
-# convert numeric column properly
-df["value_num"] = pd.to_numeric(df["value_num"], errors="coerce")
+df["year"] = pd.to_numeric(df["year"], errors="coerce")
+df["value"] = pd.to_numeric(df["value"], errors="coerce")
+df = df.dropna(subset=["year", "value"])
 
-# Sidebar – only select indicator
-indicator_list = df["indicator_name"].dropna().unique()
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
+st.sidebar.header("Controls")
 
+indicator_list = sorted(df["indicator"].unique())
 selected_indicator = st.sidebar.selectbox(
-    "Select an Indicator",
+    "Select Indicator",
     indicator_list
 )
 
-# Filter data
-filtered_df = df[df["indicator_name"] == selected_indicator]
+filtered_df = df[df["indicator"] == selected_indicator].sort_values("year")
 
-st.subheader(f"Indicator: {selected_indicator}")
-
-# Bar chart
-st.write("### Bar Chart")
-fig_bar = px.bar(
-    filtered_df,
-    x="year",
-    y="value_num",
-    title=f"{selected_indicator} Over Years"
+selected_year = st.sidebar.slider(
+    "Select Year (for map)",
+    int(filtered_df["year"].min()),
+    int(filtered_df["year"].max()),
+    int(filtered_df["year"].max())
 )
-st.plotly_chart(fig_bar, use_container_width=True)
 
-# Line chart
-st.write("### Line Chart")
-fig_line = px.line(
+forecast_years = st.sidebar.slider(
+    "Forecast Years Into Future",
+    1, 10, 5
+)
+
+# --------------------------------------------------
+# KPI
+# --------------------------------------------------
+st.subheader(f"📊 Indicator: {selected_indicator}")
+latest_value = filtered_df.iloc[-1]["value"]
+latest_year = int(filtered_df.iloc[-1]["year"])
+
+st.metric(
+    label=f"Latest Value ({latest_year})",
+    value=f"{latest_value:,.2f}"
+)
+
+# --------------------------------------------------
+# VISUALIZATIONS
+# --------------------------------------------------
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### Line Chart")
+    fig_line = px.line(
+        filtered_df,
+        x="year",
+        y="value",
+        markers=True
+    )
+    st.plotly_chart(fig_line, use_container_width=True)
+
+with col2:
+    st.markdown("### Bar Chart")
+    fig_bar = px.bar(
+        filtered_df,
+        x="year",
+        y="value"
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+# --------------------------------------------------
+# HISTOGRAM
+# --------------------------------------------------
+st.markdown("### Histogram of Values")
+fig_hist = px.histogram(
     filtered_df,
+    x="value",
+    nbins=10
+)
+st.plotly_chart(fig_hist, use_container_width=True)
+
+# --------------------------------------------------
+# PREDICTION MODEL
+# --------------------------------------------------
+st.markdown("### 🔮 Future Prediction (Linear Trend)")
+
+X = filtered_df[["year"]]
+y = filtered_df["value"]
+
+model = LinearRegression()
+model.fit(X, y)
+
+future_years = np.arange(
+    int(filtered_df["year"].max()) + 1,
+    int(filtered_df["year"].max()) + forecast_years + 1
+)
+
+future_df = pd.DataFrame({"year": future_years})
+future_df["predicted_value"] = model.predict(future_df[["year"]])
+
+forecast_plot_df = pd.concat([
+    filtered_df[["year", "value"]].rename(columns={"value": "cases"}),
+    future_df.rename(columns={"predicted_value": "cases"})
+])
+
+forecast_plot_df["type"] = (
+    ["Actual"] * len(filtered_df) +
+    ["Predicted"] * len(future_df)
+)
+
+fig_forecast = px.line(
+    forecast_plot_df,
     x="year",
-    y="value_num",
+    y="cases",
+    color="type",
     markers=True
 )
-st.plotly_chart(fig_line, use_container_width=True)
+st.plotly_chart(fig_forecast, use_container_width=True)
 
-# Show data table
-st.write("### Data Table")
+# --------------------------------------------------
+# DATA TABLE
+# --------------------------------------------------
+st.markdown("### Data Table")
 st.dataframe(filtered_df)
 
-st.header("Bhutan District Map")
-
-import pydeck as pdk
-import json
-import pandas as pd
+# --------------------------------------------------
+# MAP (YEAR-WISE HIGHLIGHT)
+# --------------------------------------------------
+st.header("🗺️ Bhutan District Map (Year-wise Indicator)")
 
 geojson = json.load(open("data/bhutan_districts.json"))
+
+# NOTE:
+# If district-level malaria data becomes available,
+# replace this simulated scaling logic
+year_value = filtered_df[filtered_df["year"] == selected_year]["value"].mean()
+fill_intensity = min(255, int(year_value * 10)) if not np.isnan(year_value) else 50
 
 layer = pdk.Layer(
     "GeoJsonLayer",
     geojson,
     stroked=True,
     filled=True,
-    get_fill_color="[255, 0, 0, 100]",
+    get_fill_color=f"[255, {255 - fill_intensity}, {255 - fill_intensity}, 140]",
+    get_line_color=[0, 0, 0],
+    pickable=True,
 )
 
 view_state = pdk.ViewState(
@@ -97,7 +190,10 @@ view_state = pdk.ViewState(
 st.pydeck_chart(
     pdk.Deck(
         layers=[layer],
-        initial_view_state=view_state
+        initial_view_state=view_state,
+        tooltip={"text": f"Year: {selected_year}"}
     )
 )
+
+st.caption("⚠️ District coloring is illustrative. Replace with real district-level data when available.")
 
